@@ -46,20 +46,20 @@ async def validate_infrastructure(generator_result: Dict[str, Any], command_resu
             "suggestions": []
         }
     
-    # Extract intent and parameters from command result
+    # Extract intent and parameters from command result safely
     intent = ""
     parameters = {}
     original_prompt = ""
     
     if isinstance(command_result, dict):
-        intent = command_result.get("intent", "")
+        intent = command_result.get("intent", "unknown")
         parameters = command_result.get("parameters", {})
         original_prompt = command_result.get("original_prompt", "")
     elif isinstance(command_result, str):
         try:
             # Try to parse as JSON
             parsed = json.loads(command_result)
-            intent = parsed.get("intent", "")
+            intent = parsed.get("intent", "unknown")
             parameters = parsed.get("parameters", {})
             original_prompt = parsed.get("original_prompt", "")
         except json.JSONDecodeError:
@@ -246,10 +246,23 @@ class ValidatorAgent:
             command_result = dependencies.get('command', {})
             
             if not generator_result:
-                raise ValueError("Missing generator result in dependencies")
-                
-            if not command_result:
-                raise ValueError("Missing command result in dependencies")
+                logger.warning(f"No generator result found for workflow {workflow_id}, attempting fallback")
+                # Try to get the generator result from the original payload
+                if 'prompt' in payload:
+                    generator_result = {"terraform": "# No Terraform code available"}
+                else:
+                    raise ValueError("Missing generator result in dependencies and no fallback available")
+            
+            # Create default command result if missing
+            if not command_result or command_result.get("error"):
+                logger.warning(f"Command result missing or invalid for workflow {workflow_id}, using default values")
+                # Use default values
+                command_result = {
+                    "intent": "deploy",
+                    "resource_type": "web application", 
+                    "parameters": {"ec2": True, "s3": True},
+                    "original_prompt": payload.get('prompt', "Deploy infrastructure")
+                }
                 
             # Validate infrastructure
             validation_result = await validate_infrastructure(generator_result, command_result)
@@ -259,7 +272,13 @@ class ValidatorAgent:
             logger.info(f"Completed validator task for workflow {workflow_id}")
         except Exception as e:
             logger.error(f"Error validating infrastructure for workflow {workflow_id}: {e}")
-            self._publish_result(workflow_id, "failed", {"error": str(e)})
+            self._publish_result(workflow_id, "failed", {
+                "error": str(e),
+                "validation_score": 0,
+                "validation_status": "FAILED",
+                "issues": [{"severity": "high", "description": f"Validation error: {str(e)}", "affected_resource": "unknown"}],
+                "suggestions": []
+            })
             
     def _publish_result(self, correlation_id: str, status: str, result: Dict[str, Any]):
         """
