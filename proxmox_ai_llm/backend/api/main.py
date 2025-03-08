@@ -4,6 +4,7 @@ import logging
 
 from proxmox_ai_llm.backend.agents.event_orchestrator import EventOrchestrator
 from proxmox_ai_llm.backend.api.event_api import router as event_api_router
+from proxmox_ai_llm.backend.api.cost_api import router as cost_api_router
 from proxmox_ai_llm.backend.database import initialize_database
 from proxmox_ai_llm.backend.messaging import initialize_kafka_client
 from proxmox_ai_llm.backend.agents import start_agents, stop_agents
@@ -59,6 +60,7 @@ app = FastAPI(
 
 # Register API routers
 app.include_router(event_api_router, prefix="/api")
+app.include_router(cost_api_router, prefix="/api/agents")
 
 @app.get("/")
 async def root():
