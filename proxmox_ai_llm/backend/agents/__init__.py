@@ -69,8 +69,19 @@ def start_agents():
         running_agents.append(cost_estimation_agent_process)
         logger.info(f"Started Cost Estimation Agent (PID: {cost_estimation_agent_process.pid})")
         
+        # Start Validator Agent
+        from proxmox_ai_llm.backend.agents.validator import start_validator_agent
+        
+        validator_agent_process = multiprocessing.Process(
+            target=start_validator_agent,
+            name="validator_agent"
+        )
+        validator_agent_process.start()
+        running_agents.append(validator_agent_process)
+        logger.info(f"Started Validator Agent (PID: {validator_agent_process.pid})")
+        
         # Add more agent processes here as they are implemented
-        # e.g. Validator Agent, Deployment Agent, etc.
+        # e.g. Feedback Agent, Deployment Agent, etc.
         
     except Exception as e:
         logger.error(f"Error starting agents: {e}")
