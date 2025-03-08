@@ -1,9 +1,9 @@
 import weaviate
-from weaviate import Client
 import json
 import uuid
 import time
 import logging
+import os
 from typing import Dict, Any, List, Optional, Union
 
 logger = logging.getLogger("multi_agent")
@@ -20,7 +20,6 @@ class WeaviateDatabase:
             url: Weaviate server URL
             api_key: Weaviate API key (optional)
         """
-        import os
         self.url = url or os.getenv("WEAVIATE_URL", "http://localhost:8080")
         self.api_key = api_key or os.getenv("WEAVIATE_API_KEY")
         self.client = None
@@ -30,9 +29,12 @@ class WeaviateDatabase:
     def _initialize_client(self):
         """Initialize Weaviate client"""
         try:
-            auth_config = weaviate.auth.AuthApiKey(api_key=self.api_key) if self.api_key else None
-            
-            self.client = Client(
+            # Create a Weaviate client
+            auth_config = None
+            if self.api_key:
+                auth_config = weaviate.auth.AuthApiKey(api_key=self.api_key)
+                
+            self.client = weaviate.Client(
                 url=self.url,
                 auth_client_secret=auth_config,
                 additional_headers={
@@ -65,8 +67,7 @@ class WeaviateDatabase:
                         {
                             "name": "agent",
                             "dataType": ["string"],
-                            "description": "Name of the agent",
-                            "indexSearchable": True
+                            "description": "Name of the agent"
                         },
                         {
                             "name": "response",
@@ -78,14 +79,12 @@ class WeaviateDatabase:
                         {
                             "name": "timestamp",
                             "dataType": ["int"],
-                            "description": "Timestamp of the response",
-                            "indexSearchable": True
+                            "description": "Timestamp of the response"
                         },
                         {
                             "name": "workflowId",
                             "dataType": ["string"],
-                            "description": "ID of the workflow",
-                            "indexSearchable": True
+                            "description": "ID of the workflow"
                         }
                     ]
                 })
@@ -100,8 +99,7 @@ class WeaviateDatabase:
                         {
                             "name": "status",
                             "dataType": ["string"],
-                            "description": "Workflow status",
-                            "indexSearchable": True
+                            "description": "Workflow status"
                         },
                         {
                             "name": "prompt",
@@ -119,14 +117,12 @@ class WeaviateDatabase:
                         {
                             "name": "timestamp",
                             "dataType": ["int"],
-                            "description": "Start timestamp",
-                            "indexSearchable": True
+                            "description": "Start timestamp"
                         },
                         {
                             "name": "completedTimestamp",
                             "dataType": ["int"],
-                            "description": "Completion timestamp",
-                            "indexSearchable": True
+                            "description": "Completion timestamp"
                         }
                     ]
                 })
@@ -141,14 +137,12 @@ class WeaviateDatabase:
                         {
                             "name": "workflowId",
                             "dataType": ["string"],
-                            "description": "ID of the workflow",
-                            "indexSearchable": True
+                            "description": "ID of the workflow"
                         },
                         {
                             "name": "rating",
                             "dataType": ["number"],
-                            "description": "User rating (1-5)",
-                            "indexSearchable": True
+                            "description": "User rating (1-5)"
                         },
                         {
                             "name": "comments",
@@ -160,8 +154,7 @@ class WeaviateDatabase:
                         {
                             "name": "timestamp",
                             "dataType": ["int"],
-                            "description": "Feedback timestamp",
-                            "indexSearchable": True
+                            "description": "Feedback timestamp"
                         }
                     ]
                 })
@@ -176,8 +169,7 @@ class WeaviateDatabase:
                         {
                             "name": "category",
                             "dataType": ["string"],
-                            "description": "Learning data category",
-                            "indexSearchable": True
+                            "description": "Learning data category"
                         },
                         {
                             "name": "prompt",
@@ -202,14 +194,12 @@ class WeaviateDatabase:
                         {
                             "name": "source",
                             "dataType": ["string"],
-                            "description": "Source of learning data",
-                            "indexSearchable": True
+                            "description": "Source of learning data"
                         },
                         {
                             "name": "timestamp",
                             "dataType": ["int"],
-                            "description": "Creation timestamp",
-                            "indexSearchable": True
+                            "description": "Creation timestamp"
                         }
                     ]
                 })
