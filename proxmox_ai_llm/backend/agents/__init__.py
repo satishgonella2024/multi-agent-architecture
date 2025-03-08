@@ -47,8 +47,19 @@ def start_agents():
         running_agents.append(security_agent_process)
         logger.info(f"Started Security Agent (PID: {security_agent_process.pid})")
         
+        # Start Architect Agent
+        from proxmox_ai_llm.backend.agents.architect import start_architect_agent
+        
+        architect_agent_process = multiprocessing.Process(
+            target=start_architect_agent,
+            name="architect_agent"
+        )
+        architect_agent_process.start()
+        running_agents.append(architect_agent_process)
+        logger.info(f"Started Architect Agent (PID: {architect_agent_process.pid})")
+        
         # Add more agent processes here as they are implemented
-        # e.g. Architect Agent, Validator Agent, etc.
+        # e.g. Validator Agent, Deployment Agent, etc.
         
     except Exception as e:
         logger.error(f"Error starting agents: {e}")
