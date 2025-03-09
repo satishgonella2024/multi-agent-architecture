@@ -48,6 +48,17 @@ class EventOrchestrator:
         self.workflow_results = {}
         self.active_workflows = {}
         self.consumer_id = None
+        self.websocket_manager = None
+        
+    def register_websocket_manager(self, websocket_manager):
+        """
+        Register the WebSocket manager for real-time notifications
+        
+        Args:
+            websocket_manager: WebSocket manager instance
+        """
+        self.websocket_manager = websocket_manager
+        logger.info("WebSocket manager registered with orchestrator")
         
     async def start_workflow(self, prompt: str) -> str:
         """
@@ -86,6 +97,19 @@ class EventOrchestrator:
             payload={"prompt": prompt},
             correlation_id=workflow_id
         )
+        
+        # Notify WebSocket clients about workflow start
+        if self.websocket_manager:
+            asyncio.create_task(
+                self.websocket_manager.broadcast(
+                    workflow_id,
+                    {
+                        "event_type": "workflow_started",
+                        "workflow_id": workflow_id,
+                        "timestamp": self.active_workflows[workflow_id]["timestamp"]
+                    }
+                )
+            )
         
         logger.info(f"Started workflow {workflow_id} with prompt: {prompt}")
         return workflow_id
@@ -178,6 +202,20 @@ class EventOrchestrator:
             
         logger.info(f"Agent {agent_name} completed for workflow {workflow_id}")
         
+        # Notify WebSocket clients about agent completion
+        if self.websocket_manager:
+            asyncio.create_task(
+                self.websocket_manager.broadcast(
+                    workflow_id,
+                    {
+                        "event_type": "agent_completed",
+                        "agent": agent_name,
+                        "workflow_id": workflow_id,
+                        "timestamp": int(asyncio.get_event_loop().time())
+                    }
+                )
+            )
+        
         # Check which agents can be started next
         self._trigger_next_agents(workflow_id)
         
@@ -202,6 +240,21 @@ class EventOrchestrator:
         workflow["completed_agents"].add(agent_name)
         
         logger.error(f"Agent {agent_name} failed for workflow {workflow_id}: {error_message}")
+        
+        # Notify WebSocket clients about agent failure
+        if self.websocket_manager:
+            asyncio.create_task(
+                self.websocket_manager.broadcast(
+                    workflow_id,
+                    {
+                        "event_type": "agent_failed",
+                        "agent": agent_name,
+                        "workflow_id": workflow_id,
+                        "error": error_message,
+                        "timestamp": int(asyncio.get_event_loop().time())
+                    }
+                )
+            )
         
         # We still try to continue with other agents that don't depend on this one
         self._trigger_next_agents(workflow_id)
@@ -263,6 +316,20 @@ class EventOrchestrator:
             correlation_id=workflow_id
         )
         
+        # Notify WebSocket clients about agent start
+        if self.websocket_manager:
+            asyncio.create_task(
+                self.websocket_manager.broadcast(
+                    workflow_id,
+                    {
+                        "event_type": "agent_started",
+                        "agent": agent_name,
+                        "workflow_id": workflow_id,
+                        "timestamp": int(asyncio.get_event_loop().time())
+                    }
+                )
+            )
+        
         logger.info(f"Started agent {agent_name} for workflow {workflow_id}")
         
     def _is_workflow_complete(self, workflow_id: str) -> bool:
@@ -302,6 +369,7 @@ class EventOrchestrator:
         """
         workflow = self.active_workflows[workflow_id]
         workflow["status"] = status
+        completion_timestamp = int(asyncio.get_event_loop().time())
         
         # Store completed workflow in results and database
         self.workflow_results[workflow_id] = workflow
@@ -312,8 +380,22 @@ class EventOrchestrator:
                 "prompt": workflow["prompt"],
                 "results": workflow["results"],
                 "timestamp": workflow["timestamp"],
-                "completed_timestamp": int(asyncio.get_event_loop().time())
+                "completed_timestamp": completion_timestamp
             })
+            
+        # Notify WebSocket clients about workflow completion
+        if self.websocket_manager:
+            asyncio.create_task(
+                self.websocket_manager.broadcast(
+                    workflow_id,
+                    {
+                        "event_type": "workflow_completed",
+                        "workflow_id": workflow_id,
+                        "status": status,
+                        "timestamp": completion_timestamp
+                    }
+                )
+            )
             
         logger.info(f"Workflow {workflow_id} completed with status: {status}")
         

@@ -1,0 +1,25 @@
+{
+  "name": "infraguardian-ui",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.20.0",
+    "recharts": "^2.10.1",
+    "three": "^0.159.0",
+    "lucide-react": "^0.299.0",
+    "tailwindcss": "^3.3.5"
+  },
+  "devDependencies": {
+    "vite": "^5.0.2",
+    "@vitejs/plugin-react": "^4.2.0",
+    "postcss": "^8.4.31",
+    "autoprefixer": "^10.4.16"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  }
+}

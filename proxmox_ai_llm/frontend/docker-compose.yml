@@ -1,0 +1,14 @@
+# Frontend development service
+frontend:
+  build:
+    context: .
+    dockerfile: frontend.Dockerfile
+  ports:
+    - "5173:5173"
+  volumes:
+    - ./proxmox_ai_llm/frontend:/app
+    - /app/node_modules
+  environment:
+    - VITE_API_URL=http://localhost:8000
+  depends_on:
+    - api

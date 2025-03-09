@@ -3,6 +3,8 @@ import os
 import logging
 import uvicorn
 from dotenv import load_dotenv
+from fastapi.middleware.cors import CORSMiddleware
+
 
 # Load environment variables
 load_dotenv()
@@ -33,6 +35,14 @@ def main():
         port=port,
         reload=True,
         log_level=log_level
+    )
+
+    app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],  # Frontend dev server
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
     )
 
 if __name__ == "__main__":
