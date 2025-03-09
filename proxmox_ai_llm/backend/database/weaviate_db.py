@@ -5,7 +5,6 @@ import time
 import logging
 import os
 from typing import Dict, Any, List, Optional, Union
-
 logger = logging.getLogger("multi_agent")
 
 class WeaviateDatabase:
@@ -253,7 +252,8 @@ class WeaviateDatabase:
             return object_uuid
         except Exception as e:
             logger.error(f"Failed to store agent output: {e}")
-            raise
+            # Don't raise the exception to prevent workflow interruption
+            return None
             
     def fetch_agent_outputs(self, agent_name: Optional[str] = None, 
                           workflow_id: Optional[str] = None,
@@ -345,18 +345,53 @@ class WeaviateDatabase:
             # Add completed timestamp if present
             if "completed_timestamp" in state:
                 data_object["completedTimestamp"] = state["completed_timestamp"]
-                
-            # Store in Weaviate
-            self.client.data_object.create(
-                data_object=data_object,
-                class_name="Workflow",
-                uuid=workflow_id
-            )
             
-            logger.info(f"Stored workflow state for {workflow_id}")
+            # Check if workflow exists
+            try:
+                existing = self.client.data_object.get_by_id(
+                    uuid=workflow_id,
+                    class_name="Workflow",
+                    with_vector=False
+                )
+                
+                if existing:
+                    # Update existing workflow
+                    self.client.data_object.update(
+                        data_object=data_object,
+                        class_name="Workflow",
+                        uuid=workflow_id
+                    )
+                    logger.info(f"Updated workflow state for {workflow_id}")
+                else:
+                    # Create new workflow
+                    self.client.data_object.create(
+                        data_object=data_object,
+                        class_name="Workflow",
+                        uuid=workflow_id
+                    )
+                    logger.info(f"Created workflow state for {workflow_id}")
+            except Exception as inner_e:
+                # If checking for existence fails, try to create
+                logger.warning(f"Error checking workflow existence: {inner_e}, attempting to create")
+                try:
+                    self.client.data_object.create(
+                        data_object=data_object,
+                        class_name="Workflow",
+                        uuid=workflow_id
+                    )
+                    logger.info(f"Created workflow state for {workflow_id} (fallback)")
+                except Exception as create_e:
+                    # If creation fails, try update as a last resort
+                    logger.warning(f"Create failed, attempting update: {create_e}")
+                    self.client.data_object.update(
+                        data_object=data_object,
+                        class_name="Workflow",
+                        uuid=workflow_id
+                    )
+                    logger.info(f"Updated workflow state for {workflow_id} (fallback)")
         except Exception as e:
-            logger.error(f"Failed to store workflow state: {e}")
-            raise
+            logger.error(f"Failed to store workflow state: {workflow_id} - {e}")
+            # Don't raise the exception to prevent workflow interruption
             
     def get_workflow_state(self, workflow_id: str) -> Optional[Dict[str, Any]]:
         """
@@ -382,7 +417,7 @@ class WeaviateDatabase:
                     try:
                         result["results"] = json.loads(result["results"])
                     except json.JSONDecodeError:
-                        pass
+                        result["results"] = {}
                 return result
             return None
         except Exception as e:
@@ -423,7 +458,7 @@ class WeaviateDatabase:
             return feedback_id
         except Exception as e:
             logger.error(f"Failed to store feedback: {e}")
-            raise
+            return None
             
     def _learn_from_feedback(self, workflow_id: str, rating: float, comments: str):
         """
@@ -519,7 +554,7 @@ class WeaviateDatabase:
             return learning_id
         except Exception as e:
             logger.error(f"Failed to store learning data: {e}")
-            raise
+            return None
             
     def get_similar_learning_data(self, prompt: str, category: Optional[str] = None,
                                 limit: int = 5) -> List[Dict[str, Any]]:

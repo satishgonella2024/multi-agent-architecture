@@ -6,7 +6,6 @@ import asyncio
 import json
 import time
 import logging
-
 from proxmox_ai_llm.backend.database import get_database
 from proxmox_ai_llm.backend.agents.event_orchestrator import EventOrchestrator
 
@@ -91,15 +90,39 @@ async def get_workflow_status(
     """
     try:
         status = await orchestrator.get_workflow_status(workflow_id)
+        
+        # Ensure status contains the required fields
+        if not isinstance(status, dict):
+            logger.warning(f"Invalid status format for workflow {workflow_id}")
+            return {
+                "workflow_id": workflow_id, 
+                "status": "error", 
+                "message": "Invalid status format"
+            }
+            
+        if "status" not in status:
+            logger.warning(f"Status field missing for workflow {workflow_id}")
+            status["status"] = "unknown"
+            
         if status["status"] == "not_found":
-            raise HTTPException(status_code=404, detail=f"Workflow {workflow_id} not found")
+            logger.warning(f"Workflow {workflow_id} not found")
+            return {
+                "workflow_id": workflow_id,
+                "status": "not_found",
+                "message": f"Workflow {workflow_id} not found"
+            }
         
         return status
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error getting workflow status: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        # Return a valid response instead of throwing an error
+        return {
+            "workflow_id": workflow_id, 
+            "status": "error", 
+            "message": f"Error retrieving status: {str(e)}"
+        }
 
 @router.get("/outputs/{workflow_id}")
 async def get_workflow_outputs(
@@ -112,7 +135,13 @@ async def get_workflow_outputs(
     try:
         db = get_database()
         if not db:
-            raise HTTPException(status_code=500, detail="Database not initialized")
+            logger.error("Database not initialized")
+            return {
+                "workflow_id": workflow_id,
+                "status": "error",
+                "message": "Database not initialized",
+                "outputs": []
+            }
             
         # Fetch outputs for this workflow
         outputs = db.fetch_agent_outputs(
@@ -123,7 +152,12 @@ async def get_workflow_outputs(
         return {"workflow_id": workflow_id, "outputs": outputs}
     except Exception as e:
         logger.error(f"Error getting workflow outputs: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        return {
+            "workflow_id": workflow_id,
+            "status": "error",
+            "message": str(e),
+            "outputs": []
+        }
 
 @router.post("/feedback")
 async def submit_feedback(request: FeedbackRequest):
@@ -133,7 +167,11 @@ async def submit_feedback(request: FeedbackRequest):
     try:
         db = get_database()
         if not db:
-            raise HTTPException(status_code=500, detail="Database not initialized")
+            logger.error("Database not initialized")
+            return {
+                "status": "error",
+                "message": "Database not initialized"
+            }
             
         # Store feedback
         feedback_id = db.store_feedback(
@@ -142,13 +180,22 @@ async def submit_feedback(request: FeedbackRequest):
             comments=request.comments
         )
         
+        if not feedback_id:
+            return {
+                "status": "error",
+                "message": "Failed to store feedback"
+            }
+        
         return {
             "feedback_id": feedback_id,
             "message": "Feedback submitted successfully"
         }
     except Exception as e:
         logger.error(f"Error submitting feedback: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        return {
+            "status": "error",
+            "message": f"Error submitting feedback: {str(e)}"
+        }
 
 @router.get("/cost-estimate/{workflow_id}")
 async def get_cost_estimate(
@@ -161,7 +208,12 @@ async def get_cost_estimate(
     try:
         db = get_database()
         if not db:
-            raise HTTPException(status_code=500, detail="Database not initialized")
+            logger.error("Database not initialized")
+            return {
+                "workflow_id": workflow_id,
+                "status": "error",
+                "message": "Database not initialized"
+            }
             
         # Fetch cost estimation agent output
         outputs = db.fetch_agent_outputs(
@@ -171,27 +223,43 @@ async def get_cost_estimate(
         
         if not outputs:
             # Check if cost_estimation agent has been started yet
-            status = await orchestrator.get_workflow_status(workflow_id)
-            
-            if "cost_estimation" in status.get("started_agents", []):
+            try:
+                status = await orchestrator.get_workflow_status(workflow_id)
+                
+                if not isinstance(status, dict):
+                    return {
+                        "workflow_id": workflow_id,
+                        "status": "error",
+                        "message": "Invalid workflow status format"
+                    }
+                
+                started_agents = status.get("started_agents", [])
+                if "cost_estimation" in started_agents:
+                    return {
+                        "workflow_id": workflow_id,
+                        "status": "processing",
+                        "message": "Cost estimation is currently processing"
+                    }
+                else:
+                    return {
+                        "workflow_id": workflow_id,
+                        "status": "pending",
+                        "message": "Cost estimation has not been started yet"
+                    }
+            except Exception as status_e:
+                logger.error(f"Error getting workflow status for cost estimate: {status_e}")
                 return {
                     "workflow_id": workflow_id,
-                    "status": "processing",
-                    "message": "Cost estimation is currently processing"
-                }
-            else:
-                return {
-                    "workflow_id": workflow_id,
-                    "status": "pending",
-                    "message": "Cost estimation has not been started yet"
+                    "status": "error",
+                    "message": f"Error checking workflow status: {str(status_e)}"
                 }
             
         # Extract latest cost estimation
-        latest_output = outputs[0]
-        response = latest_output.get("response", "{}")
-        
-        # Parse JSON response
         try:
+            latest_output = outputs[0]
+            response = latest_output.get("response", "{}")
+            
+            # Parse JSON response
             if isinstance(response, str):
                 cost_data = json.loads(response)
             else:
@@ -202,15 +270,20 @@ async def get_cost_estimate(
                 "status": "completed",
                 "cost_estimate": cost_data
             }
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, IndexError) as parse_e:
+            logger.error(f"Error parsing cost data: {parse_e}")
             return {
                 "workflow_id": workflow_id,
                 "status": "error",
-                "message": "Invalid cost estimation data"
+                "message": f"Invalid cost estimation data: {str(parse_e)}"
             }
     except Exception as e:
         logger.error(f"Error getting cost estimate: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        return {
+            "workflow_id": workflow_id,
+            "status": "error",
+            "message": f"Error getting cost estimate: {str(e)}"
+        }
 
 @router.post("/learning-data")
 async def add_learning_data(request: LearningDataRequest):
@@ -220,7 +293,11 @@ async def add_learning_data(request: LearningDataRequest):
     try:
         db = get_database()
         if not db:
-            raise HTTPException(status_code=500, detail="Database not initialized")
+            logger.error("Database not initialized")
+            return {
+                "status": "error",
+                "message": "Database not initialized"
+            }
             
         # Store learning data
         learning_id = db.store_learning_data(
@@ -231,13 +308,22 @@ async def add_learning_data(request: LearningDataRequest):
             source=request.source
         )
         
+        if not learning_id:
+            return {
+                "status": "error",
+                "message": "Failed to store learning data"
+            }
+        
         return {
             "learning_id": learning_id,
             "message": "Learning data added successfully"
         }
     except Exception as e:
         logger.error(f"Error adding learning data: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        return {
+            "status": "error",
+            "message": f"Error adding learning data: {str(e)}"
+        }
 
 @router.get("/learning-data/similar")
 async def get_similar_learning_data(
@@ -251,7 +337,12 @@ async def get_similar_learning_data(
     try:
         db = get_database()
         if not db:
-            raise HTTPException(status_code=500, detail="Database not initialized")
+            logger.error("Database not initialized")
+            return {
+                "status": "error",
+                "message": "Database not initialized",
+                "learning_data": []
+            }
             
         # Get similar learning data
         learning_data = db.get_similar_learning_data(
@@ -263,4 +354,8 @@ async def get_similar_learning_data(
         return {"learning_data": learning_data}
     except Exception as e:
         logger.error(f"Error getting similar learning data: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        return {
+            "status": "error",
+            "message": f"Error getting similar learning data: {str(e)}",
+            "learning_data": []
+        }
