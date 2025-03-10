@@ -18,6 +18,8 @@ import Architecture from './tabs/Architecture';
 import Cost from './tabs/Cost';
 import Validation from './tabs/Validation';
 
+import AgentWorkflow from '../InfrastructureVisualization/AgentWorkflow';
+
 const Dashboard = () => {
   // Get workflowId from URL parameters
   const { id: urlWorkflowId } = useParams();
@@ -129,6 +131,12 @@ const Dashboard = () => {
           validationScore={validationScore}
           monthlyCost={workflowData.cost?.details?.monthly_cost}
         />
+
+        {/* ✅ Integrated Agent Workflow Visualization */}
+      <div className="my-6">
+        <h2 className="text-xl font-semibold mb-2">Agent Workflow</h2>
+        <AgentWorkflow />
+      </div>
 
         {/* Tabs */}
         <TabNavigation activeTab={activeTab} setActiveTab={setActiveTab} />

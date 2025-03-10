@@ -48,3 +48,5 @@ logs/
 .DS_Store
 .coverage
 htmlcov/
+proxmox_ai_llm/frontend/node_modules/
+proxmox_ai_llm/frontend/node_modules/
