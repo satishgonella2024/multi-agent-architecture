@@ -97,7 +97,7 @@ export const useWorkflowData = (workflowId, refreshInterval = 3000) => {
   }, []);
   
   // Function to fetch workflow data from the API
-  const fetchWorkflowData = useCallback(async () => {
+  const fetchWorkflowData = useCallback(async (signal) => {
     if (!workflowId) {
       setLoading(false);
       return;
@@ -108,25 +108,31 @@ export const useWorkflowData = (workflowId, refreshInterval = 3000) => {
       
       // Fetch both status and outputs in parallel
       const [statusResponse, outputsResponse] = await Promise.all([
-        getWorkflowStatus(workflowId),
-        getWorkflowOutputs(workflowId)
+        getWorkflowStatus(workflowId, { signal }),
+        getWorkflowOutputs(workflowId, null, { signal })
       ]);
       
       // Transform the data for the UI
       const transformedData = transformWorkflowData(statusResponse, outputsResponse);
       setWorkflowData(transformedData);
+      setError(null);
       setLoading(false);
     } catch (err) {
-      console.error('Error fetching workflow data:', err);
-      setError(err);
+      if (err.name !== 'AbortError') {
+        console.error('Error fetching workflow data:', err);
+        setError(err);
+      }
       setLoading(false);
     }
   }, [workflowId, transformWorkflowData]);
   
   // Set up polling effect to periodically fetch workflow data
   useEffect(() => {
+    // Create an abort controller for this effect
+    const abortController = new AbortController();
+    
     // Initial fetch
-    fetchWorkflowData();
+    fetchWorkflowData(abortController.signal);
     
     // Set up polling interval for active workflows
     let intervalId = null;
@@ -134,7 +140,9 @@ export const useWorkflowData = (workflowId, refreshInterval = 3000) => {
         (workflowData?.status?.state === 'RUNNING' || 
          workflowData?.status?.state === 'PENDING' || 
          loading)) {
-      intervalId = setInterval(fetchWorkflowData, refreshInterval);
+      intervalId = setInterval(() => {
+        fetchWorkflowData(abortController.signal);
+      }, refreshInterval);
     }
     
     // Cleanup interval on unmount or when workflow is complete
@@ -142,12 +150,18 @@ export const useWorkflowData = (workflowId, refreshInterval = 3000) => {
       if (intervalId) {
         clearInterval(intervalId);
       }
+      abortController.abort();
     };
   }, [workflowId, workflowData?.status?.state, loading, fetchWorkflowData, refreshInterval]);
   
   // Function to manually refresh the data
   const refreshData = useCallback(() => {
-    fetchWorkflowData();
+    const abortController = new AbortController();
+    fetchWorkflowData(abortController.signal);
+    
+    return () => {
+      abortController.abort();
+    };
   }, [fetchWorkflowData]);
   
   return {
