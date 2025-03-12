@@ -5,8 +5,9 @@ import Dashboard from './components/Dashboard';
 import Settings from './components/Settings';
 import WorkflowHistory from './components/WorkflowHistory';
 import { WorkflowProvider } from './contexts/WorkflowContext';
-import { Loader2 } from 'lucide-react';
+import { Loader2, AlertCircle, Server, RefreshCw } from 'lucide-react';
 import { startWorkflow } from './services/workflowService';
+import { checkApiHealth } from './services/api';
 
 // Home component with the form
 const Home: React.FC = () => {
@@ -17,6 +18,8 @@ const Home: React.FC = () => {
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
   const [maxTokens, setMaxTokens] = useState(2000);
   const [temperature, setTemperature] = useState(0.7);
+  const [backendStatus, setBackendStatus] = useState<'checking' | 'online' | 'offline'>('checking');
+  const [checkingBackend, setCheckingBackend] = useState(false);
   
   // Clear current workflow ID when the component mounts
   useEffect(() => {
@@ -26,6 +29,40 @@ const Home: React.FC = () => {
       setWorkflowId(null);
     }
   }, []);
+  
+  // Check if the backend is available
+  const checkBackendStatus = async () => {
+    setCheckingBackend(true);
+    try {
+      const isHealthy = await checkApiHealth();
+      setBackendStatus(isHealthy ? 'online' : 'offline');
+      if (!isHealthy) {
+        setError('Backend service is currently unavailable. Some features may not work properly.');
+      } else {
+        setError(null);
+      }
+    } catch (err) {
+      console.error('Backend health check failed:', err);
+      setBackendStatus('offline');
+      setError('Backend service is currently unavailable. Some features may not work properly.');
+    } finally {
+      setCheckingBackend(false);
+    }
+  };
+  
+  // Check backend status on component mount
+  useEffect(() => {
+    checkBackendStatus();
+    
+    // Set up periodic health checks every 30 seconds
+    const intervalId = setInterval(() => {
+      if (backendStatus === 'offline') {
+        checkBackendStatus();
+      }
+    }, 30000);
+    
+    return () => clearInterval(intervalId);
+  }, [backendStatus]);
   
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -62,7 +99,18 @@ const Home: React.FC = () => {
       }
     } catch (err) {
       console.error('Error starting workflow:', err);
-      setError('Failed to start workflow. Please try again.');
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      
+      if (
+        errorMessage.includes('ECONNREFUSED') || 
+        errorMessage.includes('ECONNRESET') || 
+        errorMessage.includes('Network Error')
+      ) {
+        setError('Cannot connect to the backend service. Please check if the server is running.');
+        setBackendStatus('offline');
+      } else {
+        setError('Failed to start workflow. Please try again.');
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -88,7 +136,62 @@ const Home: React.FC = () => {
           Infrastructure Analysis System
         </h2>
         
+        {backendStatus === 'offline' && (
+          <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg flex items-start">
+            <AlertCircle className="w-5 h-5 text-yellow-500 mr-3 mt-0.5 flex-shrink-0" />
+            <div className="flex-1">
+              <h3 className="font-medium text-yellow-800">Backend Connection Issue</h3>
+              <p className="text-sm text-yellow-700 mt-1">
+                Cannot connect to the backend service. Some features may not work properly.
+              </p>
+              <div className="mt-3">
+                <button
+                  onClick={checkBackendStatus}
+                  disabled={checkingBackend}
+                  className="inline-flex items-center px-3 py-1.5 border border-yellow-300 text-xs font-medium rounded-md bg-yellow-50 hover:bg-yellow-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500"
+                >
+                  {checkingBackend ? (
+                    <>
+                      <Loader2 className="w-3 h-3 animate-spin mr-1.5" />
+                      Checking...
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw className="w-3 h-3 mr-1.5" />
+                      Retry Connection
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        
+        {backendStatus === 'checking' && (
+          <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg flex items-center justify-center">
+            <Loader2 className="w-5 h-5 animate-spin text-blue-500 mr-2" />
+            <p className="text-blue-700">Checking backend connection...</p>
+          </div>
+        )}
+        
         <div className="bg-white shadow rounded-lg p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-medium">Start New Analysis</h3>
+            <div className="flex items-center">
+              <Server className={`w-4 h-4 mr-1.5 ${
+                backendStatus === 'online' ? 'text-green-500' : 
+                backendStatus === 'offline' ? 'text-red-500' : 'text-gray-400'
+              }`} />
+              <span className={`text-xs ${
+                backendStatus === 'online' ? 'text-green-600' : 
+                backendStatus === 'offline' ? 'text-red-600' : 'text-gray-500'
+              }`}>
+                {backendStatus === 'online' ? 'Backend Online' : 
+                 backendStatus === 'offline' ? 'Backend Offline' : 'Checking Status'}
+              </span>
+            </div>
+          </div>
+          
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label htmlFor="prompt" className="block text-sm font-medium text-gray-700">
@@ -163,15 +266,18 @@ const Home: React.FC = () => {
             )}
             
             {error && (
-              <div className="text-red-600 text-sm">{error}</div>
+              <div className="p-3 bg-red-50 border border-red-200 rounded-md text-red-600 text-sm flex items-start">
+                <AlertCircle className="w-4 h-4 text-red-500 mr-2 mt-0.5 flex-shrink-0" />
+                <span>{error}</span>
+              </div>
             )}
             
             <div className="flex justify-end">
               <button
                 type="submit"
-                disabled={isSubmitting}
+                disabled={isSubmitting || backendStatus === 'offline'}
                 className={`inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white ${
-                  isSubmitting || !prompt.trim()
+                  isSubmitting || !prompt.trim() || backendStatus === 'offline'
                     ? 'bg-gray-400 cursor-not-allowed'
                     : 'bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500'
                 }`}

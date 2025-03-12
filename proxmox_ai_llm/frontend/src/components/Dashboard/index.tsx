@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useWorkflow } from '../../hooks/useWorkflow';
 import { ScoreSummary } from '../../types/workflow';
-import { Loader2, XCircle, PlusCircle } from 'lucide-react';
+import { Loader2, XCircle, PlusCircle, AlertCircle } from 'lucide-react';
 import AgentWorkflow from '../InfrastructureVisualization/AgentWorkflow';
 
 type TabType = 'overview' | 'security' | 'architecture' | 'cost' | 'validation';
@@ -11,8 +11,17 @@ const Dashboard: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<TabType>('overview');
+  const [backendError, setBackendError] = useState<string | null>(null);
   
   const { workflowData, isLoading, error } = useWorkflow(id || null);
+
+  useEffect(() => {
+    if (error && (error.includes('ECONNREFUSED') || error.includes('ECONNRESET'))) {
+      setBackendError('Backend connection failed. Using fallback visualization.');
+    } else {
+      setBackendError(null);
+    }
+  }, [error]);
 
   useEffect(() => {
     if (!id) {
@@ -24,7 +33,7 @@ const Dashboard: React.FC = () => {
     return null;
   }
 
-  if (isLoading) {
+  if (isLoading && !backendError) {
     return (
       <div className="flex items-center justify-center p-8">
         <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
@@ -32,7 +41,7 @@ const Dashboard: React.FC = () => {
     );
   }
 
-  if (error || !workflowData) {
+  if (error && !backendError && !workflowData) {
     return (
       <div className="text-center p-8 text-red-500">
         <XCircle className="w-8 h-8 mx-auto mb-2" />
@@ -42,6 +51,15 @@ const Dashboard: React.FC = () => {
   }
 
   const calculateScores = (): ScoreSummary => {
+    if (!workflowData) {
+      return {
+        security: 0,
+        architecture: 0,
+        cost: 0,
+        validation: 0,
+      };
+    }
+    
     return {
       security: workflowData.results.security?.details?.security_score || 0,
       architecture: workflowData.results.architecture?.details?.architecture_score || 0,
@@ -54,11 +72,18 @@ const Dashboard: React.FC = () => {
 
   return (
     <div className="container mx-auto px-4 py-8">
+      {backendError && (
+        <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md flex items-center">
+          <AlertCircle className="w-5 h-5 text-yellow-500 mr-2 flex-shrink-0" />
+          <p className="text-sm text-yellow-700">{backendError}</p>
+        </div>
+      )}
+      
       <div className="mb-8">
         <div className="flex justify-between items-center mb-4">
           <h1 className="text-2xl font-bold">Infrastructure Analysis Dashboard</h1>
           <Link 
-            to="/" 
+            to="/new" 
             className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
           >
             <PlusCircle className="w-4 h-4 mr-2" />
@@ -115,7 +140,7 @@ const Dashboard: React.FC = () => {
           {activeTab === 'security' && (
             <div>
               <h2 className="text-xl font-semibold mb-4">Security Analysis</h2>
-              {workflowData.results.security ? (
+              {workflowData?.results.security ? (
                 <div className="space-y-4">
                   <div className="bg-gray-50 p-4 rounded-lg">
                     <h3 className="font-medium text-lg mb-2">Security Score: {scores.security}%</h3>
